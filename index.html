@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auditly — Scan before you ship</title>
+<meta name="description" content="Free security & health scan for web apps. Find exposed secrets, missing headers, broken links, and TLS issues in seconds." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #0b0f0e;
+    --paper: #f3f1ea;
+    --line: #d6d2c4;
+    --signal: #00e08a;     /* diagnostic green */
+    --signal-dim: #0a3d2a;
+    --alert: #ff5a47;
+    --warn: #ffb020;
+    --muted: #6b6f6a;
+    --mono: 'IBM Plex Mono', monospace;
+    --display: 'Fraunces', Georgia, serif;
+    --body: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  ::selection { background: var(--signal); color: var(--ink); }
+
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---- top bar ---- */
+  header {
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 20px 0;
+    position: sticky; top: 0;
+    background: rgba(11,15,14,0.85);
+    backdrop-filter: blur(8px);
+    z-index: 20;
+  }
+  .bar { display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: var(--mono); font-weight: 600; font-size: 17px; letter-spacing: -0.02em; display: flex; align-items: center; gap: 9px; }
+  .logo .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 12px var(--signal); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .nav-cta { font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--signal); padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; transition: transform .15s; }
+  .nav-cta:hover { transform: translateY(-1px); }
+
+  /* ---- hero ---- */
+  .hero { padding: 72px 0 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--signal); margin-bottom: 22px; }
+  h1 {
+    font-family: var(--display);
+    font-weight: 900;
+    font-size: clamp(40px, 7vw, 76px);
+    line-height: 0.96;
+    letter-spacing: -0.03em;
+    margin-bottom: 20px;
+  }
+  h1 em { font-style: italic; color: var(--signal); }
+  .lede { font-size: 18px; color: #cfd0cc; max-width: 540px; margin-bottom: 36px; }
+
+  /* ---- scan form ---- */
+  .scan-box { display: flex; gap: 10px; max-width: 560px; flex-wrap: wrap; }
+  .scan-box input {
+    flex: 1; min-width: 240px;
+    background: #14191800; border: 1px solid var(--line);
+    color: var(--paper); font-family: var(--mono); font-size: 15px;
+    padding: 16px 18px; border-radius: 8px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .scan-box input::placeholder { color: #6b6f6a; }
+  .scan-box input:focus { border-color: var(--signal); box-shadow: 0 0 0 3px rgba(0,224,138,0.15); }
+  .scan-btn {
+    background: var(--signal); color: var(--ink); border: none;
+    font-family: var(--mono); font-weight: 600; font-size: 15px;
+    padding: 16px 28px; border-radius: 8px; cursor: pointer;
+    transition: transform .15s, opacity .15s; white-space: nowrap;
+  }
+  .scan-btn:hover { transform: translateY(-2px); }
+  .scan-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .hint { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 14px; }
+
+  /* ---- loading ---- */
+  .loading { padding: 40px 0; display: none; }
+  .loading.on { display: block; }
+  .step { font-family: var(--mono); font-size: 14px; color: var(--muted); padding: 7px 0; display: flex; align-items: center; gap: 12px; opacity: .4; transition: opacity .3s, color .3s; }
+  .step.active { opacity: 1; color: var(--paper); }
+  .step.done { opacity: 1; color: var(--signal); }
+  .step .mark { width: 16px; display: inline-block; }
+
+  /* ---- results ---- */
+  .results { display: none; padding: 24px 0 80px; }
+  .results.on { display: block; animation: fade .5s; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .scorecard {
+    border: 1px solid var(--line); border-radius: 14px; padding: 32px;
+    display: flex; gap: 32px; align-items: center; flex-wrap: wrap;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    margin-bottom: 14px;
+  }
+  .grade {
+    font-family: var(--display); font-weight: 900; font-size: 92px; line-height: 1;
+    letter-spacing: -0.04em; min-width: 120px; text-align: center;
+  }
+  .grade small { display:block; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: .1em; margin-top: 6px; }
+  .score-meta { flex: 1; min-width: 220px; }
+  .score-url { font-family: var(--mono); font-size: 14px; color: var(--signal); word-break: break-all; margin-bottom: 8px; }
+  .score-line { font-size: 15px; color: #cfd0cc; margin-bottom: 16px; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { font-family: var(--mono); font-size: 12px; padding: 5px 10px; border-radius: 20px; border: 1px solid var(--line); }
+  .pill.crit { color: var(--alert); border-color: rgba(255,90,71,.4); }
+  .pill.high { color: #ff8a4c; border-color: rgba(255,138,76,.4); }
+  .pill.med { color: var(--warn); border-color: rgba(255,176,32,.4); }
+  .pill.low { color: #8ec9ff; border-color: rgba(142,201,255,.3); }
+  .pill.pos { color: var(--signal); border-color: rgba(0,224,138,.4); }
+
+  .actions { display: flex; gap: 10px; margin: 16px 0 32px; flex-wrap: wrap; }
+  .ghost-btn { font-family: var(--mono); font-size: 13px; background: transparent; color: var(--paper); border: 1px solid var(--line); padding: 10px 16px; border-radius: 7px; cursor: pointer; transition: border-color .15s; }
+  .ghost-btn:hover { border-color: var(--signal); }
+
+  /* ---- findings ---- */
+  .group-title { font-family: var(--mono); font-size: 12px; letter-spacing: .15em; text-transform: uppercase; color: var(--muted); margin: 28px 0 12px; }
+  .finding { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .finding-head { padding: 16px 18px; display: flex; gap: 14px; align-items: flex-start; cursor: pointer; }
+  .sev { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; padding: 4px 8px; border-radius: 5px; text-transform: uppercase; white-space: nowrap; margin-top: 2px; }
+  .sev.critical { background: var(--alert); color: #fff; }
+  .sev.high { background: #ff8a4c; color: var(--ink); }
+  .sev.medium { background: var(--warn); color: var(--ink); }
+  .sev.low { background: #8ec9ff; color: var(--ink); }
+  .sev.positive { background: var(--signal); color: var(--ink); }
+  .finding-body-text { flex: 1; }
+  .finding-title { font-weight: 600; font-size: 15px; margin-bottom: 3px; }
+  .finding-detail { font-size: 14px; color: #b9bbb6; }
+  .finding-evidence { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 8px; word-break: break-all; }
+  .chev { color: var(--muted); font-family: var(--mono); transition: transform .2s; margin-top: 2px; }
+  .finding.open .chev { transform: rotate(90deg); }
+
+  .fix-panel { display: none; border-top: 1px solid var(--line); padding: 18px; background: rgba(0,0,0,0.25); }
+  .finding.open .fix-panel { display: block; }
+  .fix-why { font-size: 14px; color: #cfd0cc; margin-bottom: 14px; }
+  .stack-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stack-tab { font-family: var(--mono); font-size: 12px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; color: var(--muted); }
+  .stack-tab.active { color: var(--ink); background: var(--signal); border-color: var(--signal); }
+  .fix-code { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; background: #0d1211; border: 1px solid var(--line); border-radius: 8px; padding: 14px; white-space: pre-wrap; word-break: break-word; color: #d7e7df; }
+
+  /* ---- sell block ---- */
+  .sell { border: 1px solid var(--signal); border-radius: 14px; padding: 32px; margin-top: 40px; background: linear-gradient(180deg, rgba(0,224,138,0.06), transparent); }
+  .sell h3 { font-family: var(--display); font-weight: 900; font-size: 28px; letter-spacing: -0.02em; margin-bottom: 10px; }
+  .sell p { color: #cfd0cc; margin-bottom: 20px; max-width: 560px; }
+  .sell-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+  .sell-ctas a { font-family: var(--mono); font-size: 14px; font-weight: 600; padding: 13px 22px; border-radius: 8px; text-decoration: none; transition: transform .15s; }
+  .sell-ctas a:hover { transform: translateY(-2px); }
+  .cta-primary { background: var(--signal); color: var(--ink); }
+  .cta-secondary { background: transparent; color: var(--paper); border: 1px solid var(--line); }
+
+  /* ---- credibility strip ---- */
+  .cred { border-top: 1px solid rgba(255,255,255,0.08); padding: 28px 0; margin-top: 64px; }
+  .cred-inner { display: flex; gap: 28px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .cred-inner b { color: var(--paper); font-weight: 600; }
+
+  footer { border-top: 1px solid rgba(255,255,255,0.08); padding: 28px 0 48px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  footer a { color: var(--signal); text-decoration: none; }
+
+  .err { color: var(--alert); font-family: var(--mono); font-size: 14px; margin-top: 14px; display: none; }
+  .err.on { display: block; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  @media (max-width: 560px) { .grade { font-size: 68px; } .scorecard { padding: 22px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <div class="logo"><span class="dot"></span>auditly</div>
+    <a class="nav-cta" href="https://www.fiverr.com/DennisZeib" target="_blank" rel="noopener">Hire for full QA →</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <div class="eyebrow">Free security &amp; health scan</div>
+    <h1>Scan before<br>you <em>ship</em>.</h1>
+    <p class="lede">Point Auditly at any live URL. In seconds it finds exposed secrets, missing security headers, broken links, weak TLS, and email-spoofing gaps — then shows you exactly how to fix each one.</p>
+
+    <div class="scan-box">
+      <input id="urlInput" type="text" placeholder="yourdomain.com" autocomplete="off" spellcheck="false" />
+      <button class="scan-btn" id="scanBtn">Run scan</button>
+    </div>
+    <div class="hint">No signup. No data stored. Public sites only.</div>
+    <div class="err" id="errBox"></div>
+  </section>
+
+  <section class="loading" id="loading">
+    <div class="step" data-i="0"><span class="mark">▸</span> Resolving target &amp; checking HTTPS…</div>
+    <div class="step" data-i="1"><span class="mark">▸</span> Inspecting security headers &amp; CORS…</div>
+    <div class="step" data-i="2"><span class="mark">▸</span> Probing for exposed files &amp; secrets…</div>
+    <div class="step" data-i="3"><span class="mark">▸</span> Verifying TLS certificate &amp; DNS…</div>
+    <div class="step" data-i="4"><span class="mark">▸</span> Crawling links &amp; assets…</div>
+    <div class="step" data-i="5"><span class="mark">▸</span> Scoring report…</div>
+  </section>
+
+  <section class="results" id="results"></section>
+
+</main>
+
+<div class="cred">
+  <div class="wrap cred-inner">
+    <span><b>30+</b> security &amp; hygiene checks</span>
+    <span><b>Per-stack</b> fixes: Next.js · Express · Netlify · Nginx</span>
+    <span>Built by a <b>forensic QA engineer</b></span>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    Auditly · a free tool by Dennis Zeib ·
+    <a href="mailto:zeibdennis1@gmail.com">zeibdennis1@gmail.com</a> ·
+    <a href="https://www.fiverr.com/DennisZeib" target="_blank" rel="noopener">Fiverr: DennisZeib</a>
+  </div>
+</footer>
+
+<script>
+  // Same-origin by default (frontend served by the API). Override if hosting
+  // the frontend separately (e.g. Netlify) by setting window.API_URL.
+  const API_URL = window.API_URL || '';
+
+  const $ = (s) => document.querySelector(s);
+  const input = $('#urlInput'), btn = $('#scanBtn'), loading = $('#loading'),
+        results = $('#results'), errBox = $('#errBox');
+
+  let lastReport = null;
+
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runScan(); });
+  btn.addEventListener('click', runScan);
+
+  function showError(msg) { errBox.textContent = msg; errBox.classList.add('on'); }
+  function clearError() { errBox.classList.remove('on'); }
+
+  async function animateSteps() {
+    const steps = [...document.querySelectorAll('.step')];
+    steps.forEach((s) => s.classList.remove('active', 'done'));
+    for (let i = 0; i < steps.length; i++) {
+      steps[i].classList.add('active');
+      steps[i].querySelector('.mark').textContent = '▸';
+      await new Promise((r) => setTimeout(r, 320));
+      steps[i].classList.remove('active'); steps[i].classList.add('done');
+      steps[i].querySelector('.mark').textContent = '✓';
+    }
+  }
+
+  async function runScan() {
+    const url = input.value.trim();
+    clearError();
+    if (!url) { showError('Enter a URL first.'); return; }
+
+    btn.disabled = true; btn.textContent = 'Scanning…';
+    results.classList.remove('on'); results.innerHTML = '';
+    loading.classList.add('on');
+    const anim = animateSteps();
+
+    try {
+      const [resp] = await Promise.all([
+        fetch(API_URL + '/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        }),
+        anim,
+      ]);
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Scan failed.');
+      lastReport = data;
+      render(data);
+    } catch (e) {
+      showError(e.message || 'Something went wrong. Try again.');
+    } finally {
+      loading.classList.remove('on');
+      btn.disabled = false; btn.textContent = 'Run scan';
+    }
+  }
+
+  const SEV_LABEL = { critical: 'crit', high: 'high', medium: 'med', low: 'low', positive: 'pos' };
+  const STACKS = ['nextjs', 'express', 'netlify', 'nginx'];
+  const STACK_LABEL = { nextjs: 'Next.js', express: 'Express', netlify: 'Netlify', nginx: 'Nginx' };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  function gradeColor(grade) {
+    if (grade === 'A+' || grade === 'A') return 'var(--signal)';
+    if (grade === 'B') return '#9be88a';
+    if (grade === 'C') return 'var(--warn)';
+    if (grade === 'D') return '#ff8a4c';
+    return 'var(--alert)';
+  }
+
+  function render(d) {
+    const c = d.counts || {};
+    const pills = [];
+    if (c.critical) pills.push(`<span class="pill crit">${c.critical} critical</span>`);
+    if (c.high) pills.push(`<span class="pill high">${c.high} high</span>`);
+    if (c.medium) pills.push(`<span class="pill med">${c.medium} medium</span>`);
+    if (c.low) pills.push(`<span class="pill low">${c.low} low</span>`);
+    if (d.positives?.length) pills.push(`<span class="pill pos">${d.positives.length} passing</span>`);
+
+    const issues = d.findings.filter((f) => f.severity !== 'positive');
+
+    let html = `
+      <div class="scorecard">
+        <div class="grade" style="color:${gradeColor(d.grade)}">${d.grade}<small>${d.score}/100</small></div>
+        <div class="score-meta">
+          <div class="score-url">${esc(d.url)}</div>
+          <div class="score-line">${issues.length ? `Found <b>${issues.length}</b> issue${issues.length === 1 ? '' : 's'} to address.` : 'No issues found in the checks we ran. Nice.'}</div>
+          <div class="pills">${pills.join('')}</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="ghost-btn" onclick="exportPDF()">⬇ Download PDF report</button>
+        <button class="ghost-btn" onclick="copyShare()">⧉ Copy summary</button>
+      </div>
+    `;
+
+    if (issues.length) {
+      html += `<div class="group-title">Issues — tap any to see the fix</div>`;
+      issues.forEach((f, i) => { html += findingCard(f, i); });
+    }
+
+    if (d.positives?.length) {
+      html += `<div class="group-title">Passing checks</div>`;
+      d.positives.forEach((p) => {
+        html += `<div class="finding"><div class="finding-head" style="cursor:default">
+          <span class="sev positive">pass</span>
+          <div class="finding-body-text"><div class="finding-title">${esc(p.title)}</div></div>
+        </div></div>`;
+      });
+    }
+
+    // The sell block — this is the lead-gen engine.
+    html += `
+      <div class="sell">
+        <h3>${issues.length ? 'Want these fixed for you?' : 'Want a deeper audit?'}</h3>
+        <p>${issues.length
+          ? 'This scan is the surface. A full QA audit goes further — functional testing, an automated test suite, edge cases, and a prioritized report — then I fix what’s broken. I’ve run exactly this on a live SaaS platform: 111 defects found, 145 automated tests written.'
+          : 'Automated scans catch the obvious. A human forensic QA audit catches the rest — broken flows, race conditions, edge cases, and the bugs your users find first. I’ll test it end-to-end and fix what breaks.'}</p>
+        <div class="sell-ctas">
+          <a class="cta-primary" href="https://www.fiverr.com/DennisZeib" target="_blank" rel="noopener">Get a full QA audit + fixes →</a>
+          <a class="cta-secondary" href="mailto:zeibdennis1@gmail.com?subject=Auditly%20scan%20—%20${encodeURIComponent(d.url)}&body=Hi%20Dennis,%20I%20ran%20Auditly%20on%20${encodeURIComponent(d.url)}%20and%20want%20help%20fixing%20the%20issues.">Email me directly</a>
+        </div>
+      </div>
+    `;
+
+    results.innerHTML = html;
+    results.classList.add('on');
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function findingCard(f, i) {
+    const fix = f.fix || {};
+    const fixes = fix.fixes || {};
+    const tabs = STACKS.map((s, idx) =>
+      `<span class="stack-tab ${idx === 0 ? 'active' : ''}" onclick="switchStack(${i}, '${s}', this)">${STACK_LABEL[s]}</span>`
+    ).join('');
+    const firstCode = esc(fixes[STACKS[0]] || 'See documentation for your platform.');
+
+    return `
+      <div class="finding" id="f${i}">
+        <div class="finding-head" onclick="toggleFinding(${i})">
+          <span class="sev ${f.severity}">${SEV_LABEL[f.severity] || f.severity}</span>
+          <div class="finding-body-text">
+            <div class="finding-title">${esc(f.title)}</div>
+            <div class="finding-detail">${esc(f.detail)}</div>
+            ${f.evidence ? `<div class="finding-evidence">${esc(f.evidence)}</div>` : ''}
+          </div>
+          <span class="chev">›</span>
+        </div>
+        <div class="fix-panel">
+          ${fix.why ? `<div class="fix-why"><b>Why it matters:</b> ${esc(fix.why)}</div>` : ''}
+          <div class="stack-tabs">${tabs}</div>
+          <div class="fix-code" id="code${i}">${firstCode}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  window.toggleFinding = (i) => $('#f' + i).classList.toggle('open');
+  window.switchStack = (i, stack, el) => {
+    const f = lastReport.findings.filter((x) => x.severity !== 'positive')[i];
+    const code = (f.fix && f.fix.fixes && f.fix.fixes[stack]) || 'See documentation for your platform.';
+    $('#code' + i).textContent = code;
+    el.parentElement.querySelectorAll('.stack-tab').forEach((t) => t.classList.remove('active'));
+    el.classList.add('active');
+  };
+
+  window.copyShare = () => {
+    const d = lastReport;
+    const txt = `Auditly scan — ${d.url}\nGrade: ${d.grade} (${d.score}/100)\nIssues: ${d.findings.filter(f=>f.severity!=='positive').length}\nScanned with auditly`;
+    navigator.clipboard.writeText(txt).then(() => alert('Summary copied.'));
+  };
+
+  window.exportPDF = () => {
+    const d = lastReport;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const M = 48; let y = 60; const W = 595;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(26);
+    doc.text('Auditly Report', M, y); y += 14;
+    doc.setDrawColor(0, 224, 138); doc.setLineWidth(2); doc.line(M, y, W - M, y); y += 30;
+
+    doc.setFontSize(12); doc.setFont('helvetica', 'normal'); doc.setTextColor(90);
+    doc.text(d.url, M, y); y += 18;
+    doc.text('Scanned: ' + new Date(d.scannedAt).toLocaleString(), M, y); y += 30;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(40); doc.setTextColor(20);
+    doc.text(`${d.grade}`, M, y); 
+    doc.setFontSize(16); doc.setTextColor(90);
+    doc.text(`${d.score}/100`, M + 70, y); y += 34;
+
+    const issues = d.findings.filter((f) => f.severity !== 'positive');
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(20);
+    doc.text(`Issues found: ${issues.length}`, M, y); y += 22;
+
+    doc.setFontSize(10.5);
+    issues.forEach((f) => {
+      if (y > 760) { doc.addPage(); y = 60; }
+      doc.setFont('helvetica', 'bold'); doc.setTextColor(20);
+      doc.text(`[${f.severity.toUpperCase()}] ${f.title}`, M, y, { maxWidth: W - 2 * M }); y += 15;
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(90);
+      const lines = doc.splitTextToSize(f.detail || '', W - 2 * M);
+      doc.text(lines, M, y); y += lines.length * 13 + 4;
+      if (f.evidence) { doc.setTextColor(140); doc.text(doc.splitTextToSize(f.evidence, W - 2*M), M, y); y += 16; }
+      y += 6;
+    });
+
+    if (y > 700) { doc.addPage(); y = 60; }
+    y += 10;
+    doc.setDrawColor(0, 224, 138); doc.line(M, y, W - M, y); y += 24;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(20);
+    doc.text('Want these fixed?', M, y); y += 18;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(90);
+    doc.text('Full QA audit + fixes by Dennis Zeib', M, y); y += 15;
+    doc.text('Fiverr: fiverr.com/DennisZeib', M, y); y += 15;
+    doc.text('Email: zeibdennis1@gmail.com', M, y);
+
+    doc.save(`auditly-${d.url.replace(/[^a-z0-9]/gi, '_').slice(0, 40)}.pdf`);
+  };
+</script>
+</body>
+</html>

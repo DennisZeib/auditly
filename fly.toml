@@ -1,0 +1,23 @@
+# Fly.io config for Auditly.
+# Free-friendly: 256MB is enough for the pure-HTTP scanner.
+# `fly launch` may rewrite the app name — that's fine.
+
+app = "auditly"
+primary_region = "fra"   # Frankfurt (close to Athens). Change if you like.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true     # scale to zero when idle = stays free
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[env]
+  NODE_ENV = "production"

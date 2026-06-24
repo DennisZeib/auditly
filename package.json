@@ -1,0 +1,24 @@
+{
+  "name": "auditly",
+  "version": "2.0.0",
+  "description": "Free security & health scanner for web apps — scan before you ship.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "node-fetch": "^2.7.0"
+  },
+  "optionalDependencies": {
+    "playwright-core": "^1.44.0"
+  },
+  "author": "Dennis Zeib <zeibdennis1@gmail.com>",
+  "license": "MIT"
+}
